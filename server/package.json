@@ -1,0 +1,17 @@
+{
+  "name": "typing-practice-admin-server",
+  "description": "Firebase Blaze 없이 관리자 전용 작업(교사승인/학년변경/새학년/비번재설정)을 처리하는 무료 Node 서버",
+  "type": "commonjs",
+  "main": "index.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.0",
+    "firebase-admin": "^12.5.0"
+  }
+}

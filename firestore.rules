@@ -1,0 +1,271 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      // 관리자(개발자) 계정은 이메일로만 식별합니다.
+      return isSignedIn() && request.auth.token.email == 'xyz.lee.xyz1112@gmail.com';
+    }
+
+    function myProfile() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isTeacherOfClass(grade, classNum) {
+      return isSignedIn() &&
+        myProfile().role == 'teacher' &&
+        myProfile().status == 'active' &&
+        myProfile().grade == grade &&
+        myProfile().classNum == classNum;
+    }
+
+    // 1~2자리 숫자를 항상 2자리 문자열로 만듭니다 (01, 14 등). idMapping.js의 pad2와 동일한 규칙.
+    function pad2Str(n) {
+      return n < 10 ? '0' + string(n) : string(n);
+    }
+
+    // 학년+반+번호로부터 gradeChangeRequests 문서 ID(슬롯 키)를 계산합니다.
+    function expectedSlotKey(grade, classNum, number) {
+      return string(grade) + pad2Str(classNum) + pad2Str(number);
+    }
+
+    function isTeacher() {
+      return isSignedIn() && myProfile().role == 'teacher' && myProfile().status == 'active';
+    }
+
+    // ---------- users ----------
+    match /users/{uid} {
+      allow read: if isSignedIn() && (
+        request.auth.uid == uid ||
+        isAdmin() ||
+        isTeacherOfClass(resource.data.grade, resource.data.classNum)
+      );
+
+      // 회원가입 시 본인 문서만 생성 가능. role은 student 또는 pending_teacher만 허용하고,
+      // status도 role에 맞는 초기값만 허용합니다(위변조 방지).
+      allow create: if isSignedIn() &&
+        request.auth.uid == uid &&
+        request.resource.data.role in ['student', 'pending_teacher'] &&
+        (
+          (request.resource.data.role == 'student' && request.resource.data.status == 'active') ||
+          (request.resource.data.role == 'pending_teacher' && request.resource.data.status == 'pending')
+        );
+
+      // 상태(status) 값은 교사(같은 반)/관리자가 변경 가능하고,
+      // 본인은 관리자 메시지 확인 후 지우거나, 자기소개/프사/스티커/포인트·열정점수를 직접 갱신할 수 있습니다.
+      // banned(영구정지), role, grade 등은 관리자 서버(Admin SDK, server/index.js)만 변경합니다.
+      allow update: if isAdmin() || (
+        isTeacherOfClass(resource.data.grade, resource.data.classNum) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+      ) || (
+        isSignedIn() && request.auth.uid == uid &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['adminMessage']) &&
+        request.resource.data.adminMessage == ''
+      ) || (
+        isSignedIn() && request.auth.uid == uid &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(
+          ['bio', 'equippedSticker', 'points', 'streakCount', 'lastPracticeDate', 'uiVersion']
+        ) &&
+        (!('bio' in request.resource.data) || request.resource.data.bio.size() <= 200)
+      );
+
+      allow delete: if false;
+    }
+
+    // ---------- teacherRequests ----------
+    match /teacherRequests/{uid} {
+      allow create: if isSignedIn() && request.auth.uid == uid;
+      allow read: if isAdmin() || (isSignedIn() && request.auth.uid == uid);
+      allow update, delete: if false; // 관리자 서버(Admin SDK, server/index.js)에서만 처리
+    }
+
+    // ---------- gradeChangeRequests ----------
+    // 문서 ID는 "목표 학년+반+번호" 슬롯 키입니다. 이미 그 자리에 대한 요청이 존재하면
+    // (본인 것이든 타인 것이든) 새로 만드는 시도는 자동으로 update 취급되어 거부되므로,
+    // 별도 조회 없이도 같은 자리 중복 요청이 규칙 차원에서 막힙니다.
+    match /gradeChangeRequests/{slotKey} {
+      allow read: if isAdmin() || (isSignedIn() && resource.data.uid == request.auth.uid);
+      allow create: if isSignedIn() &&
+        request.resource.data.uid == request.auth.uid &&
+        request.resource.data.status == 'pending' &&
+        request.resource.data.targetGrade in [1, 2, 3] &&
+        request.resource.data.targetClassNum is number &&
+        request.resource.data.targetClassNum >= 1 && request.resource.data.targetClassNum <= 99 &&
+        request.resource.data.targetNumber is number &&
+        request.resource.data.targetNumber >= 1 && request.resource.data.targetNumber <= 99 &&
+        // 문서 ID(슬롯 키)가 실제 목표 학년/반/번호와 정확히 일치해야만 생성 가능.
+        // 이렇게 해야 "같은 자리를 다른 ID로 이중 예약"하는 시도를 막을 수 있습니다.
+        slotKey == expectedSlotKey(
+          request.resource.data.targetGrade,
+          request.resource.data.targetClassNum,
+          request.resource.data.targetNumber
+        );
+      // 본인 요청 취소, 또는 관리자가 승인/거부 처리 후 정리
+      allow delete: if isAdmin() || (isSignedIn() && resource.data.uid == request.auth.uid);
+      allow update: if false;
+    }
+
+    // ---------- passwordResetRequests ----------
+    // 비밀번호를 잊은 학생은 로그인이 불가능하므로, 로그인 없이도 제출할 수 있어야 합니다.
+    // 대신 필드를 엄격히 제한해 스팸/악용 여지를 최소화합니다.
+    match /passwordResetRequests/{docId} {
+      allow create: if request.resource.data.keys().hasOnly(
+        ['grade', 'classNum', 'number', 'name', 'message', 'status', 'createdAt']
+      ) && request.resource.data.status == 'pending'
+        && request.resource.data.grade in [1, 2, 3]
+        && request.resource.data.classNum is number
+        && request.resource.data.classNum >= 1 && request.resource.data.classNum <= 99
+        && request.resource.data.number is number
+        && request.resource.data.number >= 1 && request.resource.data.number <= 99
+        && request.resource.data.name is string && request.resource.data.name.size() < 30
+        && request.resource.data.message is string && request.resource.data.message.size() < 300;
+      allow read: if isAdmin();
+      allow update: if isAdmin();
+      allow delete: if false;
+    }
+
+    // ---------- announcements (공지) ----------
+    match /announcements/{docId} {
+      allow read: if isSignedIn();
+      allow create: if isAdmin();
+      allow update, delete: if isAdmin();
+    }
+
+    // ---------- settings (이용약관 등) - 회원가입 전(비로그인) 화면에서도 읽어야 해서 공개 읽기 ----------
+    match /settings/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // ---------- posts ----------
+    match /posts/{postId} {
+      allow read: if isSignedIn();
+
+      allow create: if isSignedIn() &&
+        request.resource.data.authorUid == request.auth.uid &&
+        request.resource.data.deleted == false;
+
+      // 소프트 삭제(deleted: true)는 작성자 반 담임/관리자만.
+      // 좋아요(likedBy)와 댓글수(commentCount)는 로그인한 누구나 갱신 가능(자기 좋아요만 토글하는건
+      // 클라이언트에서 보장 - 자세한 내용은 PostDetail.jsx 참고).
+      allow update: if isAdmin() || (
+        isTeacherOfClass(resource.data.authorGrade, resource.data.authorClassNum) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deleted'])
+      ) || (
+        isSignedIn() &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likedBy', 'commentCount'])
+      );
+
+      allow delete: if false;
+
+      // ---------- comments (게시물 댓글) ----------
+      match /comments/{commentId} {
+        allow read: if isSignedIn();
+        allow create: if isSignedIn() &&
+          request.resource.data.authorUid == request.auth.uid &&
+          request.resource.data.deleted == false &&
+          request.resource.data.content is string &&
+          request.resource.data.content.size() > 0 &&
+          request.resource.data.content.size() <= 300;
+        // 소프트 삭제만 허용 - 댓글 작성자 반 담임 또는 관리자
+        allow update: if isAdmin() || (
+          isTeacherOfClass(resource.data.authorGrade, resource.data.authorClassNum) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deleted'])
+        );
+        allow delete: if false;
+      }
+    }
+
+    // ---------- reports (게시물/댓글/프로필사진 신고) ----------
+    match /reports/{reportId} {
+      allow create: if isSignedIn() &&
+        request.resource.data.reporterUid == request.auth.uid &&
+        request.resource.data.status == 'pending';
+      allow read: if isAdmin() ||
+        (isSignedIn() && resource.data.reporterUid == request.auth.uid) ||
+        isTeacherOfClass(resource.data.reportedGrade, resource.data.reportedClassNum);
+      // 기각(dismissed)은 관리자가 직접, 영구정지 처리는 관리자 서버(Admin SDK)를 거칩니다.
+      allow update: if isAdmin();
+      allow delete: if false;
+    }
+
+    // ---------- scores (랭킹 집계용 연습 기록 - 전체 이력) ----------
+    match /scores/{scoreId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    // ---------- bestScores (사용자별·단계별 최고기록, 랭킹 페이지가 실제로 읽는 곳) ----------
+    match /bestScores/{docId} {
+      allow read: if isSignedIn();
+      // 문서 id는 {uid}_{type}_{stage} 형식이며, 본인 uid로 시작하는 문서만 쓸 수 있습니다.
+      allow create, update: if isSignedIn() &&
+        request.resource.data.uid == request.auth.uid &&
+        docId == request.resource.data.uid + '_' + request.resource.data.type + '_' + request.resource.data.stage;
+      allow delete: if false;
+    }
+    // ---------- passionScores (열정점수=연속 연습일, 랭킹 공개 조회용) ----------
+    match /passionScores/{uid} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn() && request.auth.uid == uid && uid == request.resource.data.uid;
+      allow delete: if false;
+    }
+    // ---------- avatars (프로필 사진, 다른 반 학생도 봐야 해서 공개 컬렉션으로 분리) ----------
+    match /avatars/{uid} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn() && request.auth.uid == uid;
+      allow delete: if isSignedIn() && request.auth.uid == uid;
+    }
+
+    // ---------- publicProfiles (다른 반 학생도 봐야 해서 공개 컬렉션으로 분리한 자기소개/스티커) ----------
+    match /publicProfiles/{uid} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.auth.uid == uid && request.resource.data.uid == uid;
+      allow update: if isSignedIn() && request.auth.uid == uid &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(
+          ['name', 'grade', 'classNum', 'number', 'bio', 'equippedSticker']
+        ) &&
+        (!('bio' in request.resource.data) || request.resource.data.bio.size() <= 200);
+      allow delete: if false;
+    }
+
+    // ---------- contests (대회) ----------
+    match /contests/{contestId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() &&
+        request.resource.data.createdBy == request.auth.uid &&
+        request.resource.data.type in ['korean', 'english'] &&
+        request.resource.data.stage in ['word', 'sentence', 'long'] &&
+        (
+          (
+            isAdmin() &&
+            request.resource.data.createdByRole == 'admin' &&
+            request.resource.data.scopeType in ['all', 'classes'] &&
+            (request.resource.data.scopeType == 'all' || request.resource.data.scope.size() <= 50)
+          ) ||
+          (
+            isTeacher() &&
+            request.resource.data.createdByRole == 'teacher' &&
+            request.resource.data.scopeType == 'classes' &&
+            request.resource.data.scope == [{ 'grade': myProfile().grade, 'classNum': myProfile().classNum }]
+          )
+        );
+      allow update, delete: if isAdmin() || (isSignedIn() && resource.data.createdBy == request.auth.uid);
+    }
+
+    // ---------- contestEntries (대회 참가 기록) ----------
+    match /contestEntries/{entryId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn() &&
+        request.auth.uid == request.resource.data.uid &&
+        entryId == request.resource.data.contestId + '_' + request.resource.data.uid;
+      allow delete: if false;
+    }
+  }
+}
