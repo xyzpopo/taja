@@ -5,6 +5,7 @@ import { db } from '../firebase'
 import { useAuth } from '../contexts/AuthContext'
 import { contestStatus } from '../utils/contests'
 import { STAGES } from '../utils/stages'
+import { maskName } from '../utils/maskName'
 
 const STAGE_LABEL = Object.fromEntries(STAGES.map((s) => [s.id, s.label]))
 const STATUS_LABEL = { active: '진행중', upcoming: '예정', ended: '종료' }
@@ -88,7 +89,7 @@ export default function ContestDetail() {
           >
             <span className={`font-display text-xl w-8 ${i < 3 ? 'text-keycap' : 'text-muted'}`}>{i + 1}</span>
             <span className="flex-1 text-sm">
-              {e.grade}학년 {e.classNum}반 {e.name}
+              {e.grade}학년 {e.classNum}반 {maskName(e.name)}
             </span>
             <span className="font-mono text-xs text-muted">최고 {e.bestCpm}타 · {e.daysParticipated}일</span>
             <span className="font-mono text-sm text-mint">{e.score}점</span>

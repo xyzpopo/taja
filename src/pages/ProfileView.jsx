@@ -4,6 +4,7 @@ import { doc, getDoc } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useAuth } from '../contexts/AuthContext'
 import { STICKERS } from '../utils/pointsConfig'
+import { maskName } from '../utils/maskName'
 import ReportButton from '../components/ReportButton'
 
 export default function ProfileView() {
@@ -42,7 +43,7 @@ export default function ProfileView() {
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-10">
-      <h1 className="font-display text-3xl text-keycap mb-1">{target.name}님의 프로필</h1>
+      <h1 className="font-display text-3xl text-keycap mb-1">{maskName(target.name)}님의 프로필</h1>
       <p className="text-muted text-sm mb-8">
         {target.grade}학년 {target.classNum}반 {target.number}번
       </p>

@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react'
 import { collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore'
 import { db } from '../firebase'
 import { STAGES } from '../utils/stages'
+import { maskName } from '../utils/maskName'
+
+const STAGE_ICON = { word: '📝', sentence: '📄', long: '📚' }
 
 export default function Ranking() {
   const [category, setCategory] = useState('speed') // 'speed' | 'passion'
@@ -43,23 +46,45 @@ export default function Ranking() {
         {category === 'speed' ? '분당 타수 기준 상위 기록입니다.' : '며칠 연속으로 꾸준히 연습했는지 보여줘요.'}
       </p>
 
-      <div className="flex gap-2 mb-3">
-        <TabButton active={category === 'speed'} onClick={() => setCategory('speed')} label="타자 랭킹" />
-        <TabButton active={category === 'passion'} onClick={() => setCategory('passion')} label="🔥 열정 점수" />
+      <div className="grid grid-cols-2 gap-3 mb-6">
+        <CategoryCard
+          active={category === 'speed'}
+          onClick={() => setCategory('speed')}
+          icon="⌨️"
+          label="타자 랭킹"
+        />
+        <CategoryCard
+          active={category === 'passion'}
+          onClick={() => setCategory('passion')}
+          icon="🔥"
+          label="열정 점수"
+        />
       </div>
 
       {category === 'speed' && (
-        <>
-          <div className="flex gap-2 mb-3">
-            <TabButton active={type === 'korean'} onClick={() => setType('korean')} label="한타" small />
-            <TabButton active={type === 'english'} onClick={() => setType('english')} label="영타" small />
+        <div className="bg-panel border border-white/10 rounded-2xl p-4 mb-6">
+          <div className="flex bg-ink rounded-key p-1 mb-4">
+            <SegmentButton active={type === 'korean'} onClick={() => setType('korean')} icon="⌨️" label="한타" />
+            <SegmentButton active={type === 'english'} onClick={() => setType('english')} icon="🔤" label="영타" />
           </div>
-          <div className="flex gap-2 mb-6 flex-wrap">
+
+          <div className="grid grid-cols-3 gap-2">
             {STAGES.filter((s) => s.id !== 'home').map((s) => (
-              <TabButton key={s.id} active={stage === s.id} onClick={() => setStage(s.id)} label={s.label} small />
+              <button
+                key={s.id}
+                onClick={() => setStage(s.id)}
+                className={`key flex flex-col items-center gap-1 py-3 rounded-key text-xs font-semibold transition-colors ${
+                  stage === s.id
+                    ? 'bg-keycap text-ink'
+                    : 'bg-ink border border-white/10 text-paper/70 hover:border-keycap/40'
+                }`}
+              >
+                <span className="text-lg">{STAGE_ICON[s.id]}</span>
+                {s.label}
+              </button>
             ))}
           </div>
-        </>
+        </div>
       )}
 
       {error && <p className="text-coral text-sm">{error}</p>}
@@ -76,7 +101,7 @@ export default function Ranking() {
               {i + 1}
             </span>
             <span className="flex-1 text-sm">
-              {row.grade}학년 {row.classNum}반 {row.name}
+              {row.grade}학년 {row.classNum}반 {maskName(row.name)}
             </span>
             {category === 'speed' ? (
               <>
@@ -93,14 +118,31 @@ export default function Ranking() {
   )
 }
 
-function TabButton({ active, onClick, label, small }) {
+function CategoryCard({ active, onClick, icon, label }) {
   return (
     <button
       onClick={onClick}
-      className={`key rounded-key font-semibold ${small ? 'px-3 py-1.5 text-xs' : 'px-4 py-2 text-sm'} ${
-        active ? 'bg-keycap text-ink' : 'bg-panel text-paper/70 border border-white/10'
+      className={`key flex items-center justify-center gap-2 py-4 rounded-2xl text-sm font-semibold border transition-colors ${
+        active
+          ? 'bg-keycap text-ink border-keycap'
+          : 'bg-panel border-white/10 text-paper/70 hover:border-keycap/40'
       }`}
     >
+      <span className="text-xl">{icon}</span>
+      {label}
+    </button>
+  )
+}
+
+function SegmentButton({ active, onClick, icon, label }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-key text-sm font-semibold transition-colors ${
+        active ? 'bg-keycap text-ink' : 'text-paper/60'
+      }`}
+    >
+      <span>{icon}</span>
       {label}
     </button>
   )
