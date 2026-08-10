@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import {
   doc, getDoc, updateDoc, arrayUnion, arrayRemove,
   collection, addDoc, query, orderBy, getDocs, serverTimestamp,
@@ -7,9 +7,7 @@ import {
 import { db } from '../firebase'
 import { useAuth } from '../contexts/AuthContext'
 import { containsBannedWords } from '../utils/profanityFilter'
-import { maskName } from '../utils/maskName'
-import { getEquippedSticker } from '../utils/stickerCache'
-import { STICKERS } from '../utils/pointsConfig'
+import AuthorBadge from '../components/AuthorBadge'
 import ReportButton from '../components/ReportButton'
 
 export default function PostDetail() {
@@ -17,8 +15,6 @@ export default function PostDetail() {
   const navigate = useNavigate()
   const { profile, currentUser } = useAuth()
   const [post, setPost] = useState(null)
-  const [authorAvatar, setAuthorAvatar] = useState('')
-  const [authorSticker, setAuthorSticker] = useState(null)
   const [notFound, setNotFound] = useState(false)
   const [loadError, setLoadError] = useState('')
   const [error, setError] = useState('')
@@ -32,11 +28,7 @@ export default function PostDetail() {
     try {
       const snap = await getDoc(doc(db, 'posts', postId))
       if (snap.exists() && !snap.data().deleted) {
-        const data = { id: snap.id, ...snap.data() }
-        setPost(data)
-        const avatarSnap = await getDoc(doc(db, 'avatars', data.authorUid))
-        if (avatarSnap.exists()) setAuthorAvatar(avatarSnap.data().avatarData || '')
-        getEquippedSticker(data.authorUid).then(setAuthorSticker)
+        setPost({ id: snap.id, ...snap.data() })
       } else {
         setNotFound(true)
       }
@@ -182,36 +174,26 @@ export default function PostDetail() {
       </span>
       <h1 className="font-display text-2xl text-paper mb-1">{post.title}</h1>
       <div className="flex items-center gap-2 mb-6">
-        <Link to={`/profile/${post.authorUid}`}>
-          {authorAvatar ? (
-            <img src={authorAvatar} alt="" className="w-8 h-8 rounded-full object-cover border border-white/15" />
-          ) : (
-            <div className="w-8 h-8 rounded-full bg-ink border border-white/15 flex items-center justify-center text-xs text-muted">
-              {post.authorName?.[0] ?? '?'}
-            </div>
-          )}
-        </Link>
-        <Link to={`/profile/${post.authorUid}`} className="text-xs text-muted hover:text-keycap">
-          {post.authorGrade}학년 {post.authorClassNum}반 {maskName(post.authorName)}
-          {STICKERS.find((s) => s.id === authorSticker)?.emoji && (
-            <span className="ml-1">{STICKERS.find((s) => s.id === authorSticker)?.emoji}</span>
-          )}
-        </Link>
+        <AuthorBadge
+          uid={post.authorUid}
+          name={post.authorName}
+          grade={post.authorGrade}
+          classNum={post.authorClassNum}
+          size="md"
+        />
         <ReportButton
           type="post"
           targetId={postId}
           reportedAuthor={reportedAuthor}
           contentSnapshot={`${post.title}\n${post.content}`}
         />
-        {authorAvatar && (
-          <ReportButton
-            type="avatar"
-            targetId={post.authorUid}
-            reportedAuthor={reportedAuthor}
-            contentSnapshot="(프로필 사진 신고)"
-            label="사진신고"
-          />
-        )}
+        <ReportButton
+          type="avatar"
+          targetId={post.authorUid}
+          reportedAuthor={reportedAuthor}
+          contentSnapshot="(프로필 사진 신고)"
+          label="사진신고"
+        />
       </div>
 
       {post.imageData && (
@@ -297,27 +279,10 @@ export default function PostDetail() {
 }
 
 function CommentRow({ comment: c, canModerate, onDelete }) {
-  const [sticker, setSticker] = useState(null)
-
-  useEffect(() => {
-    let alive = true
-    getEquippedSticker(c.authorUid).then((s) => {
-      if (alive) setSticker(s)
-    })
-    return () => {
-      alive = false
-    }
-  }, [c.authorUid])
-
-  const stickerEmoji = STICKERS.find((s) => s.id === sticker)?.emoji
-
   return (
     <div className="bg-panel border border-white/10 rounded-key p-3">
       <div className="flex items-center justify-between">
-        <Link to={`/profile/${c.authorUid}`} className="text-xs text-muted hover:text-keycap">
-          {c.authorGrade}학년 {c.authorClassNum}반 {maskName(c.authorName)}
-          {stickerEmoji && <span className="ml-1">{stickerEmoji}</span>}
-        </Link>
+        <AuthorBadge uid={c.authorUid} name={c.authorName} grade={c.authorGrade} classNum={c.authorClassNum} />
         <div className="flex items-center gap-2">
           <ReportButton
             type="comment"

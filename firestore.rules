@@ -69,7 +69,7 @@ service cloud.firestore {
       ) || (
         isSignedIn() && request.auth.uid == uid &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(
-          ['bio', 'equippedSticker', 'points', 'streakCount', 'lastPracticeDate', 'uiVersion']
+          ['bio', 'equippedStickers', 'points', 'streakCount', 'lastPracticeDate', 'uiVersion']
         ) &&
         (!('bio' in request.resource.data) || request.resource.data.bio.size() <= 200)
       );
@@ -229,7 +229,7 @@ service cloud.firestore {
       allow create: if isSignedIn() && request.auth.uid == uid && request.resource.data.uid == uid;
       allow update: if isSignedIn() && request.auth.uid == uid &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(
-          ['name', 'grade', 'classNum', 'number', 'bio', 'equippedSticker']
+          ['name', 'grade', 'classNum', 'number', 'bio', 'equippedStickers']
         ) &&
         (!('bio' in request.resource.data) || request.resource.data.bio.size() <= 200);
       allow delete: if false;

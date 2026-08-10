@@ -3,8 +3,8 @@ import { Navigate, useParams } from 'react-router-dom'
 import { doc, getDoc } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useAuth } from '../contexts/AuthContext'
-import { STICKERS } from '../utils/pointsConfig'
 import { maskName } from '../utils/maskName'
+import AvatarWithStickers from '../components/AvatarWithStickers'
 import ReportButton from '../components/ReportButton'
 
 export default function ProfileView() {
@@ -49,20 +49,12 @@ export default function ProfileView() {
       </p>
 
       <div className="bg-panel border border-white/10 rounded-2xl p-6 mb-6 flex items-center gap-5">
-        <div className="relative">
-          {avatarData ? (
-            <img src={avatarData} alt="" className="w-20 h-20 rounded-full object-cover border border-white/15" />
-          ) : (
-            <div className="w-20 h-20 rounded-full bg-ink border border-white/15 flex items-center justify-center text-2xl text-muted">
-              {target.name?.[0] ?? '?'}
-            </div>
-          )}
-          {target.equippedSticker && (
-            <span className="absolute -bottom-1 -right-1 text-xl">
-              {STICKERS.find((s) => s.id === target.equippedSticker)?.emoji}
-            </span>
-          )}
-        </div>
+        <AvatarWithStickers
+          avatarData={avatarData}
+          name={target.name}
+          equippedStickers={target.equippedStickers}
+          size="lg"
+        />
         <div className="flex flex-col gap-1">
           <ReportButton
             type="avatar"

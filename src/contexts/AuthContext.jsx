@@ -59,7 +59,7 @@ export function AuthProvider({ children }) {
       number: account.number,
       email: account.email,
       bio: '',
-      equippedSticker: null,
+      equippedStickers: {},
       points: 0,
       streakCount: 0,
       lastPracticeDate: null,
@@ -96,7 +96,7 @@ export function AuthProvider({ children }) {
       classNum: account.classNum,
       number: account.number,
       bio: '',
-      equippedSticker: null,
+      equippedStickers: {},
     })
 
     // onAuthStateChanged 리스너가 이 문서 작성보다 먼저 프로필을 조회해버리면(경쟁 조건)

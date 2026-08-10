@@ -1,25 +1,9 @@
-import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { maskName } from '../utils/maskName'
-import { getEquippedSticker } from '../utils/stickerCache'
-import { STICKERS } from '../utils/pointsConfig'
+import AuthorBadge from './AuthorBadge'
 
 export default function PostCard({ post, actions, maskNames = true }) {
   const badge = post.type === 'korean' ? '한타' : '영타'
   const date = post.createdAt?.toDate ? post.createdAt.toDate() : null
-  const [sticker, setSticker] = useState(null)
-
-  useEffect(() => {
-    let alive = true
-    getEquippedSticker(post.authorUid).then((s) => {
-      if (alive) setSticker(s)
-    })
-    return () => {
-      alive = false
-    }
-  }, [post.authorUid])
-
-  const stickerEmoji = STICKERS.find((s) => s.id === sticker)?.emoji
 
   return (
     <div className="bg-panel border border-white/10 rounded-2xl p-5 flex flex-col gap-3">
@@ -28,10 +12,13 @@ export default function PostCard({ post, actions, maskNames = true }) {
           <span className="key bg-ink text-keycap text-xs font-mono px-2 py-1 rounded-key">
             [{badge},{post.accuracy}%,{post.cpm}타]
           </span>
-          <Link to={`/profile/${post.authorUid}`} className="text-xs text-muted hover:text-keycap">
-            {post.authorGrade}학년 {post.authorClassNum}반 {maskNames ? maskName(post.authorName) : post.authorName}
-            {stickerEmoji && <span className="ml-1">{stickerEmoji}</span>}
-          </Link>
+          <AuthorBadge
+            uid={post.authorUid}
+            name={post.authorName}
+            grade={post.authorGrade}
+            classNum={post.authorClassNum}
+            mask={maskNames}
+          />
         </div>
         {date && <span className="text-[11px] text-muted">{date.toLocaleDateString('ko-KR')}</span>}
       </div>

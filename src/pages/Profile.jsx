@@ -4,10 +4,13 @@ import { db } from '../firebase'
 import { useAuth } from '../contexts/AuthContext'
 import { compressImageToDataUrl } from '../utils/imageCompress'
 import { containsBannedWords } from '../utils/profanityFilter'
+import AvatarWithStickers from '../components/AvatarWithStickers'
+import { invalidateAuthorVisuals } from '../utils/authorVisualsCache'
 import {
   bioLimitForPoints,
   postLimitForPoints,
   STICKERS,
+  STICKER_POSITIONS,
   unlockedStickers,
   nextStickerToUnlock,
 } from '../utils/pointsConfig'
@@ -42,7 +45,7 @@ export default function Profile() {
         classNum: profile.classNum,
         number: profile.number,
         bio: profile.bio || '',
-        equippedSticker: profile.equippedSticker || null,
+        equippedStickers: profile.equippedStickers || {},
       },
       { merge: true },
     )
@@ -54,6 +57,7 @@ export default function Profile() {
   const postLimit = postLimitForPoints(points)
   const unlocked = unlockedStickers(points)
   const next = nextStickerToUnlock(points)
+  const equippedStickers = profile?.equippedStickers || {}
 
   async function handleSaveBio(e) {
     e.preventDefault()
@@ -84,6 +88,7 @@ export default function Profile() {
       const dataUrl = await compressImageToDataUrl(file)
       await setDoc(doc(db, 'avatars', currentUser.uid), { uid: currentUser.uid, avatarData: dataUrl })
       setAvatarData(dataUrl)
+      invalidateAuthorVisuals(currentUser.uid)
     } catch (err) {
       setError(err.message)
     } finally {
@@ -91,11 +96,18 @@ export default function Profile() {
     }
   }
 
-  async function handleEquipSticker(stickerId) {
-    const current = profile?.equippedSticker
-    const nextVal = current === stickerId ? null : stickerId
-    await updateDoc(doc(db, 'users', currentUser.uid), { equippedSticker: nextVal })
-    await updateDoc(doc(db, 'publicProfiles', currentUser.uid), { equippedSticker: nextVal })
+  // 자리(position)를 눌러 스티커를 배정/해제합니다. 같은 스티커를 다시 누르면 그 자리에서 뺍니다.
+  async function handleAssignSticker(position, stickerId) {
+    const already = equippedStickers[position] === stickerId
+    const nextMap = { ...equippedStickers }
+    if (already || stickerId === null) {
+      delete nextMap[position]
+    } else {
+      nextMap[position] = stickerId
+    }
+    await updateDoc(doc(db, 'users', currentUser.uid), { equippedStickers: nextMap })
+    await updateDoc(doc(db, 'publicProfiles', currentUser.uid), { equippedStickers: nextMap })
+    invalidateAuthorVisuals(currentUser.uid)
   }
 
   if (!profile) return null
@@ -108,20 +120,7 @@ export default function Profile() {
       </p>
 
       <div className="bg-panel border border-white/10 rounded-2xl p-6 mb-6 flex items-center gap-5">
-        <div className="relative">
-          {avatarData ? (
-            <img src={avatarData} alt="" className="w-20 h-20 rounded-full object-cover border border-white/15" />
-          ) : (
-            <div className="w-20 h-20 rounded-full bg-ink border border-white/15 flex items-center justify-center text-2xl text-muted">
-              {profile.name?.[0] ?? '?'}
-            </div>
-          )}
-          {profile.equippedSticker && (
-            <span className="absolute -bottom-1 -right-1 text-xl">
-              {STICKERS.find((s) => s.id === profile.equippedSticker)?.emoji}
-            </span>
-          )}
-        </div>
+        <AvatarWithStickers avatarData={avatarData} name={profile.name} equippedStickers={equippedStickers} size="lg" />
         <div>
           <label className="key inline-block bg-panel border border-white/15 text-sm px-3 py-1.5 rounded-key cursor-pointer hover:border-keycap">
             {uploadingAvatar ? '업로드 중...' : '프로필 사진 바꾸기'}
@@ -146,29 +145,39 @@ export default function Profile() {
       </div>
 
       <div className="bg-panel border border-white/10 rounded-2xl p-6 mb-6">
-        <h2 className="font-display text-lg text-paper mb-3">스티커</h2>
-        <div className="flex gap-3 flex-wrap">
-          {STICKERS.map((s) => {
-            const isUnlocked = unlocked.some((u) => u.id === s.id)
-            const equipped = profile.equippedSticker === s.id
-            return (
-              <button
-                key={s.id}
-                disabled={!isUnlocked}
-                onClick={() => handleEquipSticker(s.id)}
-                className={`key flex flex-col items-center gap-1 px-4 py-3 rounded-key border text-center ${
-                  equipped
-                    ? 'bg-keycap text-ink border-keycap'
-                    : isUnlocked
-                      ? 'bg-ink border-white/15 hover:border-keycap'
-                      : 'bg-ink/50 border-white/5 opacity-40'
-                }`}
-              >
-                <span className="text-2xl">{s.emoji}</span>
-                <span className="text-[10px]">{isUnlocked ? s.label : `${s.points}P`}</span>
-              </button>
-            )
-          })}
+        <h2 className="font-display text-lg text-paper mb-1">스티커</h2>
+        <p className="text-xs text-muted mb-4">
+          자리마다 스티커를 하나씩 골라 아바타 네 귀퉁이에 자유롭게 붙일 수 있어요. 같은 스티커를 다시 누르면 빠져요.
+        </p>
+        <div className="flex flex-col gap-4">
+          {STICKER_POSITIONS.map((pos) => (
+            <div key={pos.id}>
+              <p className="text-xs text-paper/80 mb-2">{pos.label}</p>
+              <div className="flex gap-2 flex-wrap">
+                {STICKERS.map((s) => {
+                  const isUnlocked = unlocked.some((u) => u.id === s.id)
+                  const isHere = equippedStickers[pos.id] === s.id
+                  return (
+                    <button
+                      key={s.id}
+                      disabled={!isUnlocked}
+                      onClick={() => handleAssignSticker(pos.id, s.id)}
+                      className={`key flex flex-col items-center gap-0.5 px-3 py-2 rounded-key border text-center ${
+                        isHere
+                          ? 'bg-keycap text-ink border-keycap'
+                          : isUnlocked
+                            ? 'bg-ink border-white/15 hover:border-keycap'
+                            : 'bg-ink/50 border-white/5 opacity-40'
+                      }`}
+                    >
+                      <span className="text-lg">{s.emoji}</span>
+                      <span className="text-[9px]">{isUnlocked ? s.label : `${s.points}P`}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 

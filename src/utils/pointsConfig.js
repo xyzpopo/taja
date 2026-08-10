@@ -45,3 +45,18 @@ export function unlockedStickers(points) {
 export function nextStickerToUnlock(points) {
   return STICKERS.find((s) => points < s.points) ?? null
 }
+
+// 아바타 주변에 스티커를 붙일 수 있는 자리. 자리마다 하나씩, 여러 개 동시에 붙일 수 있습니다.
+export const STICKER_POSITIONS = [
+  { id: 'top-left', label: '왼쪽 위' },
+  { id: 'top-right', label: '오른쪽 위' },
+  { id: 'bottom-left', label: '왼쪽 아래' },
+  { id: 'bottom-right', label: '오른쪽 아래' },
+]
+
+export const STICKER_POSITION_STYLE = {
+  'top-left': 'top-0 left-0 -translate-x-1/3 -translate-y-1/3',
+  'top-right': 'top-0 right-0 translate-x-1/3 -translate-y-1/3',
+  'bottom-left': 'bottom-0 left-0 -translate-x-1/3 translate-y-1/3',
+  'bottom-right': 'bottom-0 right-0 translate-x-1/3 translate-y-1/3',
+}
